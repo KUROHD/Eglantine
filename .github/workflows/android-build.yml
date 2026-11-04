@@ -1,0 +1,87 @@
+name: android-build
+
+# Baut Eglantine (nx2-Branch) als Android-APK fuer arm64-v8a.
+# Manuell starten: Actions -> android-build -> "Run workflow".
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [nx2]
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  android:
+    name: Android arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # getGitVersion() braucht die Git-Historie
+          submodules: recursive
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk/2* /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK, CMake and platform
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager "ndk;28.2.13676358" "cmake;3.31.5" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Install host build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build glslang-tools ccache
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('src/android/**/*.gradle.kts', 'src/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-
+
+      - name: Cache CPM downloads
+        uses: actions/cache@v4
+        with:
+          path: .cache/cpm
+          key: cpm-android-${{ hashFiles('**/cpmfile.json', 'CMakeLists.txt') }}
+          restore-keys: cpm-android-
+
+      - name: Build APK (mainline, arm64-v8a)
+        working-directory: src/android
+        env:
+          CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleMainlineRelease
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          find src/android/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          cd out && for f in *.apk; do mv "$f" "eglantine-${GITHUB_SHA::7}-android-arm64.apk"; done
+          ls -lh
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eglantine-android-arm64
+          path: out/*.apk
+          if-no-files-found: error
