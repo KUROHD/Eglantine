@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0        # getGitVersion() braucht die Git-Historie
           submodules: recursive
@@ -29,18 +29,18 @@ jobs:
           df -h /
 
       - name: Set up Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install NDK, CMake and platform
         run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "ndk;28.2.13676358" "cmake;3.31.5" "platforms;android-36" "build-tools;36.0.0"
+          # Das Android SDK ist auf dem GitHub-Runner vorinstalliert.
+          SDKM="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin | sort -V | tail -1)/sdkmanager"
+          echo "Using $SDKM"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "ndk;28.2.13676358" "cmake;3.31.5" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install host build tools
         run: |
@@ -67,8 +67,8 @@ jobs:
         working-directory: src/android
         env:
           CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/28.2.13676358
         run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358"
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleMainlineRelease
 
